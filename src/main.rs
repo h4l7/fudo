@@ -64,7 +64,7 @@ enum Mode {
 /// Length of `chacha20poly1305::Key`
 const KEY_LEN: usize = 32;
 /// MTU of each XChaCha20Poly1305 block
-const MSG_LEN: usize = 500;
+const MSG_LEN: usize = 4096 - TAG_LEN;
 /// `A::NonceSize: Sub<U5>` means our 24-byte nonce (with STREAM overhead) becomes 19-byte (sans STREAM overhead)
 const NONCE_LEN: usize = 19;
 /// Salt used in argon2_id PB-KDF
