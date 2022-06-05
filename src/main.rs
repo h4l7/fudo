@@ -255,9 +255,12 @@ fn encrypt_file(bin_file: &mut impl Read, enc_file: &mut impl Write) -> anyhow::
 
     let mut key = derive_key(&password, &salt);
     password.zeroize();
+    salt.zeroize();
 
     let aead = XChaCha20Poly1305::new(&key);
+    key.zeroize();
     let mut stream_encryptor = stream::EncryptorBE32::from_aead(aead, &nonce.into());
+    nonce.zeroize();
 
     enc_file.write_all(&salt)?;
     enc_file.write_all(&nonce)?;
@@ -274,7 +277,6 @@ fn encrypt_file(bin_file: &mut impl Read, enc_file: &mut impl Write) -> anyhow::
             buffer.truncate(MSG_LEN);
             stream_encryptor.encrypt_next_in_place(&[], &mut buffer)?;
             enc_file.write_all(&buffer)?;
-
             filled = 0;
         } else if read_count == 0 {
             buffer.truncate(filled);
@@ -284,10 +286,6 @@ fn encrypt_file(bin_file: &mut impl Read, enc_file: &mut impl Write) -> anyhow::
             break;
         }
     }
-
-    salt.zeroize();
-    nonce.zeroize();
-    key.zeroize();
 
     Ok(())
 }
@@ -308,9 +306,12 @@ fn decrypt_file(enc_file: &mut impl Read, bin_file: &mut impl Write) -> anyhow::
 
     let mut key = derive_key(&password, &salt);
     password.zeroize();
+    salt.zeroize();
 
     let aead = XChaCha20Poly1305::new(&key);
+    key.zeroize();
     let mut stream_decryptor = stream::DecryptorBE32::from_aead(aead, &nonce.into());
+    nonce.zeroize();
 
     // ⚠ TAG_LEN bytes for the Tag appended by any Poly1305 variant.
     let mut buffer = vec![0u8; MSG_LEN + TAG_LEN];
@@ -324,19 +325,17 @@ fn decrypt_file(enc_file: &mut impl Read, bin_file: &mut impl Write) -> anyhow::
         if filled == MSG_LEN + TAG_LEN {
             stream_decryptor.decrypt_next_in_place(&[], &mut buffer)?;
             bin_file.write_all(&buffer)?;
-            filled = 0;
+            buffer.zeroize();
             buffer.resize(MSG_LEN + TAG_LEN, 0);
+            filled = 0;
         } else if read_count == 0 {
             buffer.truncate(filled);
             stream_decryptor.decrypt_last_in_place(&[], &mut buffer)?;
             bin_file.write_all(&buffer)?;
+
             break;
         }
     }
-
-    salt.zeroize();
-    nonce.zeroize();
-    key.zeroize();
 
     Ok(())
 }

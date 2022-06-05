@@ -27,3 +27,4 @@ SUBCOMMANDS:
 - Sanitize environment variables after executing fexecve(2)
 - Allow passing in custom environment variables
 - Windows support
+- Migrate system calls to palaver
