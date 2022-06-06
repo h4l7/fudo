@@ -11,6 +11,7 @@ use anyhow::anyhow;
 use chacha20poly1305::XChaCha20Poly1305;
 use clap::Parser;
 use filetime::FileTime;
+use indicatif::{ProgressBar, ProgressStyle};
 use libc::{c_char, c_int};
 use rand::{rngs::OsRng, Rng, RngCore};
 use std::{
@@ -73,6 +74,9 @@ const SALT_LEN: usize = 32;
 const SCRUB_LEN: usize = 512;
 /// Length of `chacha20poly1305::Tag`
 const TAG_LEN: usize = 16;
+/// Styling template for progress bars
+const BAR_TEMPLATE: &str = "[{elapsed_precise}] [{bar:40.magenta}] {pos:>7}/{len:7} {msg}";
+const BAR_CHARS: &str = "##-";
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -80,17 +84,41 @@ fn main() -> anyhow::Result<()> {
     match args.mode {
         Mode::Encrypt { bin_fd, enc_fd } => {
             let bin_path: PathBuf = bin_fd.try_into()?;
-            let mut bin_file = BufReader::new(File::open(&bin_path)?);
-            let mut enc_file = BufWriter::new(File::create(enc_fd)?);
+            let bin_file = File::open(&bin_path)?;
+            let bin_metadata = bin_file.metadata()?;
 
-            encrypt_file(&mut bin_file, &mut enc_file)?;
+            assert!(bin_metadata.is_file());
+
+            let bin_len = bin_metadata.len();
+            let mut bin_read = BufReader::new(bin_file);
+            let mut enc_write = BufWriter::new(File::create(enc_fd)?);
+            let bar = ProgressBar::new(bin_len);
+            bar.set_style(
+                ProgressStyle::default_bar()
+                    .template(BAR_TEMPLATE)
+                    .progress_chars(BAR_CHARS),
+            );
+
+            encrypt_file(&mut bin_read, &mut enc_write, bar)?;
         }
         Mode::Decrypt { enc_fd, bin_fd } => {
             let enc_path: PathBuf = enc_fd.try_into()?;
-            let mut enc_file = BufReader::new(File::open(&enc_path)?);
-            let mut bin_file = BufWriter::new(File::create(bin_fd)?);
+            let enc_file = File::open(&enc_path)?;
+            let enc_metadata = enc_file.metadata()?;
 
-            decrypt_file(&mut enc_file, &mut bin_file)?;
+            assert!(enc_metadata.is_file());
+
+            let enc_len = enc_metadata.len();
+            let mut enc_read = BufReader::new(enc_file);
+            let mut bin_write = BufWriter::new(File::create(bin_fd)?);
+            let bar = ProgressBar::new(enc_len);
+            bar.set_style(
+                ProgressStyle::default_bar()
+                    .template(BAR_TEMPLATE)
+                    .progress_chars(BAR_CHARS),
+            );
+
+            decrypt_file(&mut enc_read, &mut bin_write, bar)?;
         }
         Mode::Scrub { bin_fd, passes } => {
             scrub(&bin_fd, passes)?;
@@ -100,7 +128,19 @@ fn main() -> anyhow::Result<()> {
             forward_args,
         } => {
             let enc_path: PathBuf = enc_fd.try_into()?;
-            let mut enc_file = BufReader::new(File::open(&enc_path)?);
+            let enc_file = File::open(&enc_path)?;
+            let enc_metadata = enc_file.metadata()?;
+
+            assert!(enc_metadata.is_file());
+
+            let enc_len = enc_metadata.len();
+            let mut enc_read = BufReader::new(enc_file);
+            let bar = ProgressBar::new(enc_len);
+            bar.set_style(
+                ProgressStyle::default_bar()
+                    .template(BAR_TEMPLATE)
+                    .progress_chars(BAR_CHARS),
+            );
 
             // memfd_create(2)
             // NOTE: Linux only
@@ -110,7 +150,7 @@ fn main() -> anyhow::Result<()> {
             println!("{bin_mfd:?}");
             let mut bin_file = bin_mfd.into_file();
 
-            decrypt_file(&mut enc_file, &mut bin_file)?;
+            decrypt_file(&mut enc_read, &mut bin_file, bar)?;
 
             let bin_mfd = memfd::Memfd::try_from_file(bin_file)
                 .map_err(|_| anyhow!("memfd::Memfd::try_from_file"))?;
@@ -147,17 +187,14 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
 
         for _ in 0..passes {
             bin_file.seek(SeekFrom::Start(0))?;
-            // println!("{:?}", bin_file.seek(SeekFrom::Current(0))?);
 
             for _ in 0..bin_blocks {
                 OsRng.fill_bytes(&mut buffer);
                 bin_file.write_all(&buffer)?;
-                // println!("{:?}", bin_file.seek(SeekFrom::Current(0))?);
             }
 
             OsRng.fill_bytes(&mut buffer[..bin_residue as usize]);
             bin_file.write_all(&buffer[..bin_residue as usize])?;
-            // println!("{:?}", bin_file.seek(SeekFrom::Current(0))?);
 
             // Hit the plunger.
             bin_file.flush()?;
@@ -169,15 +206,12 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
         let buffer = [0u8; SCRUB_LEN];
         let mut bin_file = OpenOptions::new().write(true).open(bin_fd)?;
         bin_file.seek(SeekFrom::Start(0))?;
-        // println!("{:?}", bin_file.seek(SeekFrom::Current(0))?);
 
         for _ in 0..bin_blocks {
             bin_file.write_all(&buffer)?;
-            // println!("{:?}", bin_file.seek(SeekFrom::Current(0))?);
         }
 
         bin_file.write_all(&buffer[..bin_residue as usize])?;
-        // println!("{:?}", bin_file.seek(SeekFrom::Current(0))?);
 
         // Hit the plunger.
         bin_file.flush()?;
@@ -243,7 +277,11 @@ fn launch(mfd: &impl AsRawFd, forward_args: &str) -> anyhow::Result<()> {
     }
 }
 
-fn encrypt_file(bin_file: &mut impl Read, enc_file: &mut impl Write) -> anyhow::Result<()> {
+fn encrypt_file(
+    bin_file: &mut impl Read,
+    enc_file: &mut impl Write,
+    bar: ProgressBar,
+) -> anyhow::Result<()> {
     let mut password = rpassword::prompt_password_stdout("password: ")?;
     let mut password_conf = rpassword::prompt_password_stdout("password (confirm): ")?;
 
@@ -274,11 +312,13 @@ fn encrypt_file(bin_file: &mut impl Read, enc_file: &mut impl Write) -> anyhow::
             buffer.truncate(MSG_LEN);
             stream_encryptor.encrypt_next_in_place(&[], &mut buffer)?;
             enc_file.write_all(&buffer)?;
+            bar.inc(filled as u64);
             filled = 0;
         } else if read_count == 0 {
             buffer.truncate(filled);
             stream_encryptor.encrypt_last_in_place(&[], &mut buffer)?;
             enc_file.write_all(&buffer)?;
+            bar.inc(filled as u64);
 
             break;
         }
@@ -287,11 +327,16 @@ fn encrypt_file(bin_file: &mut impl Read, enc_file: &mut impl Write) -> anyhow::
     key.zeroize();
     nonce.zeroize();
     salt.zeroize();
+    bar.finish();
 
     Ok(())
 }
 
-fn decrypt_file(enc_file: &mut impl Read, bin_file: &mut impl Write) -> anyhow::Result<()> {
+fn decrypt_file(
+    enc_file: &mut impl Read,
+    bin_file: &mut impl Write,
+    bar: ProgressBar,
+) -> anyhow::Result<()> {
     let mut password = rpassword::prompt_password_stdout("password: ")?;
     let mut password_conf = rpassword::prompt_password_stdout("password (confirm): ")?;
 
@@ -325,11 +370,13 @@ fn decrypt_file(enc_file: &mut impl Read, bin_file: &mut impl Write) -> anyhow::
             bin_file.write_all(&buffer)?;
             buffer.zeroize();
             buffer.resize(MSG_LEN + TAG_LEN, 0);
+            bar.inc(filled as u64);
             filled = 0;
         } else if read_count == 0 {
             buffer.truncate(filled);
             stream_decryptor.decrypt_last_in_place(&[], &mut buffer)?;
             bin_file.write_all(&buffer)?;
+            bar.inc(filled as u64);
 
             break;
         }
@@ -338,6 +385,7 @@ fn decrypt_file(enc_file: &mut impl Read, bin_file: &mut impl Write) -> anyhow::
     key.zeroize();
     nonce.zeroize();
     salt.zeroize();
+    bar.finish();
 
     Ok(())
 }
