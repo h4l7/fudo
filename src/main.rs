@@ -75,8 +75,8 @@ const SCRUB_LEN: usize = 512;
 /// Length of `chacha20poly1305::Tag`
 const TAG_LEN: usize = 16;
 /// Styling template for progress bars
-const BAR_TEMPLATE: &str = "[{elapsed_precise}] [{bar:40.magenta}] {pos:>7}/{len:7} {msg}";
-const BAR_CHARS: &str = "##-";
+const BAR_TEMPLATE: &str = "[{elapsed_precise} | {binary_bytes_per_sec}] [{bar:40.magenta}] {bytes:>7} / {total_bytes:7} {msg}";
+const BAR_CHARS: &str = "#+-";
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -179,39 +179,65 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
     // println!("BIN_BLOCKS {bin_blocks:?}");
     // println!("BIN_RESIDUE {bin_residue:?}");
 
+    let bar = ProgressBar::new_spinner();
+
     // Anonymous scope for readability
     {
-        // Modifying the file in-place.
+        // Modifying the file in-place.}
         let mut buffer: [u8; SCRUB_LEN] = [0u8; SCRUB_LEN];
         let mut bin_file = OpenOptions::new().write(true).open(bin_fd)?;
 
-        for _ in 0..passes {
+        for i in 0..passes {
+            bar.set_message(format!("{}/{passes:}", i + 1));
+            bar.tick();
+
+            let inner_bar = ProgressBar::new(bin_len);
+            inner_bar.set_style(
+                ProgressStyle::default_bar()
+                    .template(BAR_TEMPLATE)
+                    .progress_chars(BAR_CHARS),
+            );
+
             bin_file.seek(SeekFrom::Start(0))?;
 
             for _ in 0..bin_blocks {
                 OsRng.fill_bytes(&mut buffer);
                 bin_file.write_all(&buffer)?;
+                inner_bar.inc(SCRUB_LEN as u64);
             }
 
             OsRng.fill_bytes(&mut buffer[..bin_residue as usize]);
             bin_file.write_all(&buffer[..bin_residue as usize])?;
+            inner_bar.inc(bin_residue);
 
             // Hit the plunger.
             bin_file.flush()?;
+            inner_bar.finish_and_clear();
         }
     }
 
     // Overwrite with zeroes, then truncate
     {
+        bar.set_message(format!("Zeroing..."));
+        bar.tick();
+
+        let inner_bar = ProgressBar::new(bin_len);
+        inner_bar.set_style(
+            ProgressStyle::default_bar()
+                .template(BAR_TEMPLATE)
+                .progress_chars(BAR_CHARS),
+        );
         let buffer = [0u8; SCRUB_LEN];
         let mut bin_file = OpenOptions::new().write(true).open(bin_fd)?;
         bin_file.seek(SeekFrom::Start(0))?;
 
         for _ in 0..bin_blocks {
             bin_file.write_all(&buffer)?;
+            inner_bar.inc(SCRUB_LEN as u64);
         }
 
         bin_file.write_all(&buffer[..bin_residue as usize])?;
+        inner_bar.inc(bin_residue);
 
         // Hit the plunger.
         bin_file.flush()?;
@@ -223,10 +249,12 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
         // Purge file r/w times
         filetime::set_file_times(bin_fd, FileTime::zero(), FileTime::zero())?;
 
+        inner_bar.finish_and_clear();
         // NOTE maybe(?) rename file for `passes`
     }
 
     std::fs::remove_file(bin_fd)?;
+    bar.finish_and_clear();
 
     Ok(())
 }
