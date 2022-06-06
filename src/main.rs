@@ -77,7 +77,7 @@ const SCRUB_LEN: usize = 512;
 /// Length of `chacha20poly1305::Tag`
 const TAG_LEN: usize = 16;
 /// Styling template for progress bars
-const BAR_TEMPLATE: &str = "{elapsed_precise:^8} | {binary_bytes_per_sec:<12} [{bar:40.red}] {bytes:>10} / {total_bytes:<10} {msg}";
+const BAR_TEMPLATE: &str = "{elapsed_precise:>8} | {binary_bytes_per_sec:<12} [{bar:40.red}] {bytes:>10} / {total_bytes:<10} {msg}";
 const BAR_CHARS: &str = "=> ";
 
 fn main() -> anyhow::Result<()> {
