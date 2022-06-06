@@ -1,6 +1,6 @@
 // Author: Nicholas Haltmeyer <halt@dtllc.io>
 // Created: 2022-06-03 <%Y-%M-%D>
-// Copyright (C) 2022 Liberas Inc - All Rights Reserved
+// Copyright (c) 2022 Liberas Inc - All Rights Reserved
 
 #![crate_name = "fudo"]
 //! # fudo - 不動
@@ -57,6 +57,8 @@ enum Mode {
     },
     Launch {
         enc_fd: String,
+        // TODO Option<String>
+        // TODO forward_env: Option<String>
         #[clap(long, default_value = "")]
         forward_args: String,
     },
@@ -75,8 +77,8 @@ const SCRUB_LEN: usize = 512;
 /// Length of `chacha20poly1305::Tag`
 const TAG_LEN: usize = 16;
 /// Styling template for progress bars
-const BAR_TEMPLATE: &str = "[{elapsed_precise} | {binary_bytes_per_sec}] [{bar:40.magenta}] {bytes:>7} / {total_bytes:7} {msg}";
-const BAR_CHARS: &str = "#+-";
+const BAR_TEMPLATE: &str = "{elapsed_precise:^8} | {binary_bytes_per_sec:<12} [{bar:40.red}] {bytes:>10} / {total_bytes:<10} {msg}";
+const BAR_CHARS: &str = "=> ";
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -248,7 +250,6 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
 
         // Purge file r/w times
         filetime::set_file_times(bin_fd, FileTime::zero(), FileTime::zero())?;
-
         inner_bar.finish_and_clear();
         // NOTE maybe(?) rename file for `passes`
     }
@@ -355,7 +356,7 @@ fn encrypt_file(
     key.zeroize();
     nonce.zeroize();
     salt.zeroize();
-    bar.finish();
+    bar.finish_and_clear();
 
     Ok(())
 }
@@ -413,7 +414,7 @@ fn decrypt_file(
     key.zeroize();
     nonce.zeroize();
     salt.zeroize();
-    bar.finish();
+    bar.finish_and_clear();
 
     Ok(())
 }
