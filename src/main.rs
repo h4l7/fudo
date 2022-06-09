@@ -13,12 +13,12 @@ use clap::Parser;
 use dialoguer::{Confirm, Password};
 use filetime::FileTime;
 use indicatif::{ProgressBar, ProgressStyle};
-use libc::{c_char};
+use libc::c_char;
 
 use rand::{rngs::OsRng, Rng, RngCore};
 use std::{
     env,
-    ffi::{CString},
+    ffi::CString,
     fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     os::unix::{io::FromRawFd, prelude::AsRawFd},
@@ -259,12 +259,11 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
         bin_file.set_len(0)?;
         bin_file.flush()?;
 
-        // Purge file r/w times
-        filetime::set_file_times(bin_fd, FileTime::zero(), FileTime::zero())?;
         inner_bar.finish_and_clear();
         // NOTE maybe(?) rename file for `passes`
     }
 
+    filetime::set_file_times(bin_fd, FileTime::zero(), FileTime::zero())?;
     std::fs::remove_file(bin_fd)?;
     bar.finish_and_clear();
 
