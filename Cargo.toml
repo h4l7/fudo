@@ -19,3 +19,4 @@ uuid = { version = "0.8", features = ["v4"] }
 zeroize = "1.4"
 indicatif = "0.16"
 dialoguer = "0.10"
+palaver = "0.2.8"

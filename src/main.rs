@@ -15,9 +15,11 @@ use filetime::FileTime;
 use indicatif::{ProgressBar, ProgressStyle};
 use libc::{c_char, c_int};
 use rand::{rngs::OsRng, Rng, RngCore};
+use std::ffi::CStr;
+use std::ffi::CString;
+use std::os::unix::io::FromRawFd;
 use std::{
     env,
-    ffi::CString,
     fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     os::unix::prelude::AsRawFd,
@@ -155,19 +157,17 @@ fn main() -> anyhow::Result<()> {
             );
 
             // memfd_create(2)
-            // NOTE: Linux only
-            let bin_mfd = memfd::MemfdOptions::default()
-                .close_on_exec(true)
-                .create(Uuid::new_v4().to_string())?;
-            // println!("{bin_mfd:?}");
-            let mut bin_file = bin_mfd.into_file();
+            // NOTE: *nix only
+            let mfd_cstring = CString::new(Uuid::new_v4().to_string())?;
+            let mfd_cstr: &CStr = mfd_cstring.as_c_str();
+            let bin_mfd = palaver::file::memfd_create(mfd_cstr, true)?;
 
-            decrypt_file(&mut enc_read, &mut bin_file, bar)?;
-
-            let bin_mfd = memfd::Memfd::try_from_file(bin_file)
-                .map_err(|_| anyhow!("memfd::Memfd::try_from_file"))?;
-
-            launch(&bin_mfd, &forward_args)?;
+            unsafe {
+                let mut bin_file = File::from_raw_fd(bin_mfd);
+                decrypt_file(&mut enc_read, &mut bin_file, bar)?;
+                let bin_mfd = bin_file.as_raw_fd();
+                launch(&bin_mfd, &forward_args)?;
+            }
         }
     }
 
