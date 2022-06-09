@@ -14,11 +14,11 @@ use dialoguer::{Confirm, Password};
 use filetime::FileTime;
 use indicatif::{ProgressBar, ProgressStyle};
 use libc::{c_char, c_int};
-use palaver::file::memfd_create;
+
 use rand::{rngs::OsRng, Rng, RngCore};
 use std::{
     env,
-    ffi::{CStr, CString},
+    ffi::{CString},
     fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     os::unix::{io::FromRawFd, prelude::AsRawFd},
@@ -158,10 +158,9 @@ fn main() -> anyhow::Result<()> {
             // memfd_create(2)
             // NOTE: *nix only
             let mfd_cstring = CString::new(Uuid::new_v4().to_string())?;
-            let mfd_cstr: &CStr = mfd_cstring.as_c_str();
-            let bin_mfd = memfd_create(mfd_cstr, true)?;
 
             unsafe {
+                let bin_mfd = libc::memfd_create(mfd_cstring.into_raw(), libc::MFD_CLOEXEC);
                 let mut bin_file = File::from_raw_fd(bin_mfd);
                 decrypt_file(&mut enc_read, &mut bin_file, bar)?;
 
