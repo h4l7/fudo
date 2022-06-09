@@ -82,6 +82,9 @@ const TAG_LEN: usize = 16;
 /// Styling template for progress bars
 const BAR_TEMPLATE: &str = "{elapsed_precise:>8} | {binary_bytes_per_sec:<12} [{bar:40.red}] {bytes:>10} / {total_bytes:<10} {msg}";
 const BAR_CHARS: &str = "=> ";
+const DIALOG_PASSWD: &str = "password";
+const DIALOG_PASSWD_CONF: &str = "password (confirm)";
+const DIALOG_PASSWD_ERROR: &str = "passwords entered do not match.";
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -192,15 +195,11 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // println!("BIN_LEN {bin_len:?}");
-    // println!("BIN_BLOCKS {bin_blocks:?}");
-    // println!("BIN_RESIDUE {bin_residue:?}");
-
     let bar = ProgressBar::new_spinner();
 
     // Anonymous scope for readability
     {
-        // Modifying the file in-place.}
+        // Modifying the file in-place.
         let mut buffer: [u8; SCRUB_LEN] = [0u8; SCRUB_LEN];
         let mut bin_file = OpenOptions::new().write(true).open(bin_fd)?;
 
@@ -327,8 +326,8 @@ fn encrypt_file(
     bar: ProgressBar,
 ) -> anyhow::Result<()> {
     let mut password = Password::new()
-        .with_prompt("password")
-        .with_confirmation("password (confirm)", "passwords entered do not match.")
+        .with_prompt(DIALOG_PASSWD)
+        .with_confirmation(DIALOG_PASSWD_CONF, DIALOG_PASSWD_ERROR)
         .interact()?;
 
     let mut salt: [u8; SALT_LEN] = OsRng.gen();
@@ -381,8 +380,8 @@ fn decrypt_file(
     bar: ProgressBar,
 ) -> anyhow::Result<()> {
     let mut password = Password::new()
-        .with_prompt("password")
-        .with_confirmation("password (confirm)", "passwords entered do not match.")
+        .with_prompt(DIALOG_PASSWD)
+        .with_confirmation(DIALOG_PASSWD_CONF, DIALOG_PASSWD_ERROR)
         .interact()?;
 
     let mut salt = [0u8; SALT_LEN];
