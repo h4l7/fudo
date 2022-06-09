@@ -7,22 +7,21 @@
 //! Command line utility to encrypt binary distributions, launch encrypted binaries without ever storing plaintext on disk, decrypt files, and scrub files from disk.
 
 use aead::{stream, NewAead};
-use anyhow::anyhow;
+
 use chacha20poly1305::XChaCha20Poly1305;
 use clap::Parser;
 use dialoguer::{Confirm, Password};
 use filetime::FileTime;
 use indicatif::{ProgressBar, ProgressStyle};
-use libc::{c_char, c_int};
+use libc::{c_char};
+use palaver::file::{fexecve, memfd_create};
 use rand::{rngs::OsRng, Rng, RngCore};
-use std::ffi::CStr;
-use std::ffi::CString;
-use std::os::unix::io::FromRawFd;
 use std::{
     env,
+    ffi::{CStr, CString},
     fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
-    os::unix::prelude::AsRawFd,
+    os::unix::{io::FromRawFd, prelude::AsRawFd},
     path::PathBuf,
 };
 use uuid::Uuid;
@@ -160,11 +159,12 @@ fn main() -> anyhow::Result<()> {
             // NOTE: *nix only
             let mfd_cstring = CString::new(Uuid::new_v4().to_string())?;
             let mfd_cstr: &CStr = mfd_cstring.as_c_str();
-            let bin_mfd = palaver::file::memfd_create(mfd_cstr, true)?;
+            let bin_mfd = memfd_create(mfd_cstr, true)?;
 
             unsafe {
                 let mut bin_file = File::from_raw_fd(bin_mfd);
                 decrypt_file(&mut enc_read, &mut bin_file, bar)?;
+
                 let bin_mfd = bin_file.as_raw_fd();
                 launch(&bin_mfd, &forward_args)?;
             }
@@ -275,49 +275,27 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
 }
 
 /// Dispatch decrypted binary from its fildes through `fexecve(2)`.
-fn launch(mfd: &impl AsRawFd, forward_args: &str) -> anyhow::Result<()> {
-    // Construct our `const *char[] argv` to forward.
+unsafe fn launch(mfd: &impl AsRawFd, forward_args: &str) -> anyhow::Result<()> {
     let args: Vec<CString> = shlex::split(forward_args)
         .unwrap()
         .iter()
         .map(|arg| CString::new(arg.as_bytes()).unwrap())
         .collect();
-    let mut args_raw: Vec<*const c_char> = args.iter().map(|arg| arg.as_ptr()).collect();
-    args_raw.push(std::ptr::null());
-    let argv: *const *const c_char = args_raw.as_ptr();
+    let mut args_raw: Vec<&CStr> = args.iter().map(|arg| arg.as_c_str()).collect();
+    let argv: &[&CStr] = args_raw.as_slice();
 
-    // Construct our `const *char[] envp` to forward.
     let vars = env::vars();
     let envs: Vec<CString> = vars
         .map(|(k, v)| CString::new(format!("{k}={v}").as_bytes()).unwrap())
         .collect();
-    let mut envs_raw: Vec<*const c_char> = envs.iter().map(|env| env.as_ptr()).collect();
-    envs_raw.push(std::ptr::null());
-    let envp: *const *const c_char = envs_raw.as_ptr();
+    let mut envs_raw: Vec<&CStr> = envs.iter().map(|env| env.as_c_str()).collect();
+    let envp: &[&CStr] = envs_raw.as_slice();
 
-    // Launch our decrypted binary.
-    let ret: c_int;
-    unsafe {
-        ret = libc::fexecve(mfd.as_raw_fd(), argv, envp);
-    }
+    // TODO maybe just use the libc version so we don't fallback to putting anything on the file system
+    // fexecve(3)
+    fexecve(mfd.as_raw_fd(), argv, envp)?;
 
-    match ret {
-        libc::EXIT_SUCCESS => {
-            Ok(())
-        },
-        libc::EINVAL => {
-            Err(anyhow!("EINVAL fd is not a valid file descriptor, or argv is NULL, or envp is NULL."))
-        },
-        libc::ENOENT => {
-            Err(anyhow!("ENOENT The close-on-exec flag is set on fd, and fd refers to a script. See man fexecve for more."))
-        },
-        libc::ENOSYS => {
-            Err(anyhow!("ENOSYS The kernel does not provide the execveat(2) system call, and the /proc filesystem could not be accessed."))
-        }
-        _ => {
-            unreachable!();
-        }
-    }
+    Ok(())
 }
 
 fn encrypt_file(
