@@ -6,6 +6,7 @@ Command line utility to encrypt binary distributions, launch encrypted binaries 
 
 ## Running
 `./target/debug/fudo --help`
+
 See `./playground` for examples.
 
 ## TODO
