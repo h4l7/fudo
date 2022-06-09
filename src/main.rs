@@ -10,6 +10,9 @@ use aead::{stream, NewAead};
 use anyhow::anyhow;
 use chacha20poly1305::XChaCha20Poly1305;
 use clap::Parser;
+use dialoguer::{
+    Confirm,
+};
 use filetime::FileTime;
 use indicatif::{ProgressBar, ProgressStyle};
 use libc::{c_char, c_int};
@@ -61,6 +64,8 @@ enum Mode {
         // TODO forward_env: Option<String>
         #[clap(long, default_value = "")]
         forward_args: String,
+        #[clap(long)]
+        forward_env: Option<String>,
     },
 }
 
@@ -128,6 +133,7 @@ fn main() -> anyhow::Result<()> {
         Mode::Launch {
             enc_fd,
             forward_args,
+            forward_env: _,
         } => {
             let enc_path: PathBuf = enc_fd.try_into()?;
             let enc_file = File::open(&enc_path)?;
@@ -176,6 +182,14 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
     let bin_len = metadata.len();
     let bin_blocks = bin_len / SCRUB_LEN as u64;
     let bin_residue = bin_len - (bin_blocks * SCRUB_LEN as u64);
+
+    if !Confirm::new()
+        .with_prompt(format!("Are you sure you want to scrub {bin_fd}?"))
+        .default(false)
+        .interact()?
+    {
+        return Ok(());
+    }
 
     // println!("BIN_LEN {bin_len:?}");
     // println!("BIN_BLOCKS {bin_blocks:?}");

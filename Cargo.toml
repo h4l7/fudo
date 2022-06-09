@@ -19,3 +19,4 @@ shlex = "1.1.0"
 uuid = { version = "0.8", features = ["v4"] }
 zeroize = "1.4"
 indicatif = "0.16"
+dialoguer = "0.10"
