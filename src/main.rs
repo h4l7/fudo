@@ -13,7 +13,7 @@ use clap::Parser;
 use dialoguer::{Confirm, Password};
 use filetime::FileTime;
 use indicatif::{ProgressBar, ProgressStyle};
-use libc::{c_char, c_int};
+use libc::{c_char};
 
 use rand::{rngs::OsRng, Rng, RngCore};
 use std::{
@@ -155,8 +155,6 @@ fn main() -> anyhow::Result<()> {
                     .progress_chars(BAR_CHARS),
             );
 
-            // memfd_create(2)
-            // NOTE: *nix only
             let mfd_cstring = CString::new(Uuid::new_v4().to_string())?;
 
             unsafe {
@@ -274,7 +272,7 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
 }
 
 /// Dispatch decrypted binary from its fildes through `fexecve(2)`.
-fn launch(mfd: &impl AsRawFd, forward_args: &str) -> anyhow::Result<()> {
+unsafe fn launch(mfd: &impl AsRawFd, forward_args: &str) -> anyhow::Result<()> {
     // Construct our `const *char[] argv` to forward.
     let args: Vec<CString> = shlex::split(forward_args)
         .unwrap()
@@ -295,10 +293,7 @@ fn launch(mfd: &impl AsRawFd, forward_args: &str) -> anyhow::Result<()> {
     let envp: *const *const c_char = envs_raw.as_ptr();
 
     // Launch our decrypted binary.
-    let ret: c_int;
-    unsafe {
-        ret = libc::fexecve(mfd.as_raw_fd(), argv, envp);
-    }
+    let ret = libc::fexecve(mfd.as_raw_fd(), argv, envp);
 
     match ret {
         libc::EXIT_SUCCESS => {
