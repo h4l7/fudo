@@ -5,23 +5,10 @@ Command line utility to encrypt binary distributions, launch encrypted binaries 
 `cargo build`
 
 ## Running
-```
-USAGE:
-    fudo <SUBCOMMAND>
+`./target/debug/fudo --help`
+See `./playground` for examples.
 
-OPTIONS:
-    -h, --help       Print help information
-    -V, --version    Print version information
-
-SUBCOMMANDS:
-    decrypt
-    encrypt
-    help       Print this message or the help of the given subcommand(s)
-    launch
-    scrub
-```
-
-# TODO
+## TODO
 - Add -v flag for debug information
 - Windows support
 - Improve --forward-env structure
