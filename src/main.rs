@@ -10,9 +10,7 @@ use aead::{stream, NewAead};
 use anyhow::anyhow;
 use chacha20poly1305::XChaCha20Poly1305;
 use clap::Parser;
-use dialoguer::{
-    Confirm,
-};
+use dialoguer::{Confirm, Password};
 use filetime::FileTime;
 use indicatif::{ProgressBar, ProgressStyle};
 use libc::{c_char, c_int};
@@ -99,6 +97,7 @@ fn main() -> anyhow::Result<()> {
             let bin_len = bin_metadata.len();
             let mut bin_read = BufReader::new(bin_file);
             let mut enc_write = BufWriter::new(File::create(enc_fd)?);
+
             let bar = ProgressBar::new(bin_len);
             bar.set_style(
                 ProgressStyle::default_bar()
@@ -118,6 +117,7 @@ fn main() -> anyhow::Result<()> {
             let enc_len = enc_metadata.len();
             let mut enc_read = BufReader::new(enc_file);
             let mut bin_write = BufWriter::new(File::create(bin_fd)?);
+
             let bar = ProgressBar::new(enc_len);
             bar.set_style(
                 ProgressStyle::default_bar()
@@ -143,6 +143,7 @@ fn main() -> anyhow::Result<()> {
 
             let enc_len = enc_metadata.len();
             let mut enc_read = BufReader::new(enc_file);
+
             let bar = ProgressBar::new(enc_len);
             bar.set_style(
                 ProgressStyle::default_bar()
@@ -155,7 +156,7 @@ fn main() -> anyhow::Result<()> {
             let bin_mfd = memfd::MemfdOptions::default()
                 .close_on_exec(true)
                 .create(Uuid::new_v4().to_string())?;
-            println!("{bin_mfd:?}");
+            // println!("{bin_mfd:?}");
             let mut bin_file = bin_mfd.into_file();
 
             decrypt_file(&mut enc_read, &mut bin_file, bar)?;
@@ -234,7 +235,7 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
 
     // Overwrite with zeroes, then truncate
     {
-        bar.set_message(format!("Zeroing..."));
+        bar.set_message("Zeroing...".to_owned());
         bar.tick();
 
         let inner_bar = ProgressBar::new(bin_len);
@@ -325,11 +326,10 @@ fn encrypt_file(
     enc_file: &mut impl Write,
     bar: ProgressBar,
 ) -> anyhow::Result<()> {
-    let mut password = rpassword::prompt_password_stdout("password: ")?;
-    let mut password_conf = rpassword::prompt_password_stdout("password (confirm): ")?;
-
-    assert!(password.eq(&password_conf));
-    password_conf.zeroize();
+    let mut password = Password::new()
+        .with_prompt("password")
+        .with_confirmation("password (confirm)", "Passwords entered do not match.")
+        .interact()?;
 
     let mut salt: [u8; SALT_LEN] = OsRng.gen();
     let mut nonce: [u8; NONCE_LEN] = OsRng.gen();
@@ -380,11 +380,10 @@ fn decrypt_file(
     bin_file: &mut impl Write,
     bar: ProgressBar,
 ) -> anyhow::Result<()> {
-    let mut password = rpassword::prompt_password_stdout("password: ")?;
-    let mut password_conf = rpassword::prompt_password_stdout("password (confirm): ")?;
-
-    assert!(password.eq(&password_conf));
-    password_conf.zeroize();
+    let mut password = Password::new()
+        .with_prompt("password")
+        .with_confirmation("password (confirm)", "Passwords entered do not match.")
+        .interact()?;
 
     let mut salt = [0u8; SALT_LEN];
     let mut nonce = [0u8; NONCE_LEN];

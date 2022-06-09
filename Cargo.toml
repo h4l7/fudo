@@ -13,7 +13,6 @@ filetime = "0.2"
 libc = "0.2"
 memfd = "0.4.1"
 rand = "0.8"
-rpassword = "5.0"
 rust-argon2 = "1.0"
 shlex = "1.1.0"
 uuid = { version = "0.8", features = ["v4"] }
