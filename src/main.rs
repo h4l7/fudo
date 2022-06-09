@@ -328,7 +328,7 @@ fn encrypt_file(
 ) -> anyhow::Result<()> {
     let mut password = Password::new()
         .with_prompt("password")
-        .with_confirmation("password (confirm)", "Passwords entered do not match.")
+        .with_confirmation("password (confirm)", "passwords entered do not match.")
         .interact()?;
 
     let mut salt: [u8; SALT_LEN] = OsRng.gen();
@@ -382,7 +382,7 @@ fn decrypt_file(
 ) -> anyhow::Result<()> {
     let mut password = Password::new()
         .with_prompt("password")
-        .with_confirmation("password (confirm)", "Passwords entered do not match.")
+        .with_confirmation("password (confirm)", "passwords entered do not match.")
         .interact()?;
 
     let mut salt = [0u8; SALT_LEN];
