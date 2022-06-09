@@ -1,6 +1,6 @@
 [package]
 name = "fudo"
-authors = ["Nicholas Haltmeyer <dtllc.io>"]
+authors = ["Nicholas Haltmeyer <halt@dtllc.io>"]
 version = "0.0.1"
 edition = "2021"
 
@@ -9,12 +9,12 @@ aead = { version = "0.4", features = ["std", "stream"] }
 anyhow = "1.0"
 chacha20poly1305 = "0.9"
 clap = { version = "3.1.6", features = ["derive"] }
+dialoguer = "0.10"
 filetime = "0.2"
+indicatif = "0.16"
 libc = "0.2"
 rand = "0.8"
 rust-argon2 = "1.0"
 shlex = "1.1.0"
 uuid = { version = "0.8", features = ["v4"] }
 zeroize = "1.4"
-indicatif = "0.16"
-dialoguer = "0.10"

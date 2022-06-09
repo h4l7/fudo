@@ -3,7 +3,7 @@
 // Copyright (c) 2022 Liberas Inc - All Rights Reserved
 
 #![crate_name = "fudo"]
-//! # fudo - 不動
+//! # fudo - 不動 - 𑖥𑖯𑖼 - हाँ
 //! Command line utility to encrypt binary distributions, launch encrypted binaries without ever storing plaintext on disk, decrypt files, and scrub files from disk.
 
 use aead::{stream, NewAead};
@@ -28,42 +28,45 @@ use uuid::Uuid;
 use zeroize::Zeroize;
 
 #[derive(clap::Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
+#[clap(author, version, about=SPLASH_BIJA)]
 struct Args {
     #[clap(subcommand)]
     mode: Mode,
 }
 
-// TODO determine best choice of MSG_LEN (maybe 4096 since thats the default page size on Linux?)
-// TODO add -j flag for thread pools on scrub
-// TODO add -v flag for debug information
-// TODO pretty ncurses progress bar
-// https://docs.rs/indicatif/latest/indicatif/
-// TODO test routines
 #[derive(clap::Subcommand, Debug)]
 enum Mode {
+    #[clap(about = "Encrypt the provided file using XChaCha20-Poly1305")]
     Encrypt {
-        bin_fd: String,
-        #[clap(short('o'))]
-        enc_fd: String,
+        #[clap(help = "Input file")]
+        bin: String,
+        #[clap(short = 'o', help = "Output file")]
+        enc: String,
     },
+    #[clap(about = "Decrypt the provided file using XChaCha20-Poly1305")]
     Decrypt {
-        enc_fd: String,
-        #[clap(short('o'))]
-        bin_fd: String,
+        #[clap(help("Input file"))]
+        enc: String,
+        #[clap(short = 'o', help = "Output file")]
+        bin: String,
     },
+    #[clap(about = "Scrub the provided file from the file system")]
     Scrub {
-        bin_fd: String,
-        #[clap(long, default_value = "2")]
+        #[clap(help = "Input file")]
+        bin: String,
+        #[clap(long, default_value = "2", help = "passes")]
         passes: usize,
     },
+    #[clap(about = "Launch the provided encrypted static binary in memory")]
     Launch {
-        enc_fd: String,
-        // TODO Option<String>
-        // TODO forward_env: Option<String>
-        #[clap(long, default_value = "")]
-        forward_args: String,
-        #[clap(long)]
+        #[clap(help = "Input file")]
+        enc: String,
+        #[clap(long, help = "Arguments to forward, as a space delimited list")]
+        forward_args: Option<String>,
+        #[clap(
+            long,
+            help = "Environment variables to forward, as a space delimited KEY=VALUE list"
+        )]
         forward_env: Option<String>,
     },
 }
@@ -80,19 +83,50 @@ const SALT_LEN: usize = 32;
 const SCRUB_LEN: usize = 512;
 /// Length of `chacha20poly1305::Tag`
 const TAG_LEN: usize = 16;
-/// Styling template for progress bars
+
 const BAR_TEMPLATE: &str = "{elapsed_precise:>8} | {binary_bytes_per_sec:<12} [{bar:40.red}] {bytes:>10} / {total_bytes:<10} {msg}";
 const BAR_CHARS: &str = "=> ";
+
 const DIALOG_PASSWD: &str = "password";
 const DIALOG_PASSWD_CONF: &str = "password (confirm)";
 const DIALOG_PASSWD_ERROR: &str = "passwords entered do not match.";
+
+const SPLASH_BIJA: &str = "
+          :#%+.               
+        -%@@@@@#-             
+       =@@@@@@@@+.=-          
+.        =%@@%-.=@@@@+.       
+ -:        :--*@@@@@@@@+:     
+  :+:     -*@@@@@@@@%-        
+    =%*#%@@@@@@@@@%-          
+      *@@@@@@@@@%-  .=#%+.    
+       :*%%%#**##==%@@@@@@%=. 
+      :++=--*@@@@@@@@@@@@%+-  
+ .:  *@@@@@@@@@@@@@@@@@*:     
+  #@@@@@@@@@@@@@@@@@@%.       
+   .=*%@@@@@@@@@@@@@@         
+       -@@@@@@@@@@@@*         
+     =%@@@@@@@#-%@@@@         
+  .+@@@@@@@@@%%#++%@@%.       
+.*@@@@@@@%*%@@@@@@%++#@+      
+%@@@@@@*:+@@@@@@@@@@%: -+=:   
+-@@@@%..#@@@@@@@*@@@@@-    .. 
+  -*@*.%@@@@@@#.-@@@@@%       
+     :%@@@@@@*  %@@@@@+       
+      +@@@@@#  -@@@@@#        
+        :+#@=  *@@@@@.        
+            .  .%@@@%         
+                 :+%@:        
+                    :++:      
+                       .:.    
+";
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     match args.mode {
-        Mode::Encrypt { bin_fd, enc_fd } => {
-            let bin_path: PathBuf = bin_fd.try_into()?;
+        Mode::Encrypt { bin, enc } => {
+            let bin_path: PathBuf = bin.try_into()?;
             let bin_file = File::open(&bin_path)?;
             let bin_metadata = bin_file.metadata()?;
 
@@ -100,7 +134,7 @@ fn main() -> anyhow::Result<()> {
 
             let bin_len = bin_metadata.len();
             let mut bin_read = BufReader::new(bin_file);
-            let mut enc_write = BufWriter::new(File::create(enc_fd)?);
+            let mut enc_write = BufWriter::new(File::create(enc)?);
 
             let bar = ProgressBar::new(bin_len);
             bar.set_style(
@@ -111,8 +145,8 @@ fn main() -> anyhow::Result<()> {
 
             encrypt_file(&mut bin_read, &mut enc_write, bar)?;
         }
-        Mode::Decrypt { enc_fd, bin_fd } => {
-            let enc_path: PathBuf = enc_fd.try_into()?;
+        Mode::Decrypt { enc, bin } => {
+            let enc_path: PathBuf = enc.try_into()?;
             let enc_file = File::open(&enc_path)?;
             let enc_metadata = enc_file.metadata()?;
 
@@ -120,7 +154,7 @@ fn main() -> anyhow::Result<()> {
 
             let enc_len = enc_metadata.len();
             let mut enc_read = BufReader::new(enc_file);
-            let mut bin_write = BufWriter::new(File::create(bin_fd)?);
+            let mut bin_write = BufWriter::new(File::create(bin)?);
 
             let bar = ProgressBar::new(enc_len);
             bar.set_style(
@@ -131,15 +165,15 @@ fn main() -> anyhow::Result<()> {
 
             decrypt_file(&mut enc_read, &mut bin_write, bar)?;
         }
-        Mode::Scrub { bin_fd, passes } => {
-            scrub(&bin_fd, passes)?;
+        Mode::Scrub { bin, passes } => {
+            scrub(&bin, passes)?;
         }
         Mode::Launch {
-            enc_fd,
+            enc,
             forward_args,
-            forward_env: _,
+            forward_env,
         } => {
-            let enc_path: PathBuf = enc_fd.try_into()?;
+            let enc_path: PathBuf = enc.try_into()?;
             let enc_file = File::open(&enc_path)?;
             let enc_metadata = enc_file.metadata()?;
 
@@ -163,7 +197,7 @@ fn main() -> anyhow::Result<()> {
                 decrypt_file(&mut enc_read, &mut bin_file, bar)?;
 
                 let bin_mfd = bin_file.as_raw_fd();
-                launch(&bin_mfd, &forward_args)?;
+                launch(&bin_mfd, forward_args, forward_env)?;
             }
         }
     }
@@ -175,11 +209,12 @@ fn main() -> anyhow::Result<()> {
 // https://github.com/brxken128/dexios/commit/30a95c477b670cfa8b8300501e9038d19675025d
 // TODO Need to compare with GNU shred and scrub(1)
 fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
-    // Get file metadata
     let bin_file = File::open(bin_fd)?;
     let metadata = bin_file.metadata()?;
+
     assert!(metadata.is_file());
     assert!(!metadata.permissions().readonly());
+
     let bin_len = metadata.len();
     let bin_blocks = bin_len / SCRUB_LEN as u64;
     let bin_residue = bin_len - (bin_blocks * SCRUB_LEN as u64);
@@ -194,10 +229,9 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
 
     let bar = ProgressBar::new_spinner();
 
-    // Anonymous scope for readability
+    // Modifying the file in-place.
     {
-        // Modifying the file in-place.
-        let mut buffer: [u8; SCRUB_LEN] = [0u8; SCRUB_LEN];
+        let mut buffer = [0u8; SCRUB_LEN];
         let mut bin_file = OpenOptions::new().write(true).open(bin_fd)?;
 
         for i in 0..passes {
@@ -225,6 +259,7 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
 
             // Hit the plunger.
             bin_file.flush()?;
+
             inner_bar.finish_and_clear();
         }
     }
@@ -270,10 +305,22 @@ fn scrub(bin_fd: &str, passes: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Dispatch decrypted binary from its fildes through `fexecve(2)`.
-unsafe fn launch(mfd: &impl AsRawFd, forward_args: &str) -> anyhow::Result<()> {
-    // Construct our `const *char[] argv` to forward.
-    let args: Vec<CString> = shlex::split(forward_args)
+/// Dispatch decrypted binary from its fildes through `fexecve(3)`.
+unsafe fn launch(
+    mfd: &impl AsRawFd,
+    forward_args: Option<String>,
+    forward_env: Option<String>,
+) -> anyhow::Result<()> {
+    // argv: *const *const c_char
+    let forward_args_string: String;
+
+    if let Some(forward_args_string_tmp) = forward_args {
+        forward_args_string = forward_args_string_tmp;
+    } else {
+        forward_args_string = "".to_owned();
+    }
+
+    let args: Vec<CString> = shlex::split(&forward_args_string)
         .unwrap()
         .iter()
         .map(|arg| CString::new(arg.as_bytes()).unwrap())
@@ -282,19 +329,27 @@ unsafe fn launch(mfd: &impl AsRawFd, forward_args: &str) -> anyhow::Result<()> {
     args_raw.push(std::ptr::null());
     let argv: *const *const c_char = args_raw.as_ptr();
 
-    // Construct our `const *char[] envp` to forward.
-    let vars = env::vars();
-    let envs: Vec<CString> = vars
-        .map(|(k, v)| CString::new(format!("{k}={v}").as_bytes()).unwrap())
-        .collect();
+    // envp: *const *const c_char
+    let envs: Vec<CString>;
+
+    if let Some(forward_env_string) = forward_env {
+        envs = shlex::split(&forward_env_string)
+            .unwrap()
+            .iter()
+            .map(|env| CString::new(env.as_bytes()).unwrap())
+            .collect();
+    } else {
+        let vars = env::vars();
+        envs = vars
+            .map(|(k, v)| CString::new(format!("{k}={v}").as_bytes()).unwrap())
+            .collect();
+    }
+
     let mut envs_raw: Vec<*const c_char> = envs.iter().map(|env| env.as_ptr()).collect();
     envs_raw.push(std::ptr::null());
     let envp: *const *const c_char = envs_raw.as_ptr();
 
-    // Launch our decrypted binary.
-    let ret = libc::fexecve(mfd.as_raw_fd(), argv, envp);
-
-    match ret {
+    match libc::fexecve(mfd.as_raw_fd(), argv, envp) {
         libc::EXIT_SUCCESS => {
             Ok(())
         },
@@ -339,7 +394,6 @@ fn encrypt_file(
     let mut filled: usize = 0;
 
     loop {
-        // We leave space for the tag.
         let read_count = bin_file.read(&mut buffer[filled..MSG_LEN])?;
         filled += read_count;
 
@@ -390,12 +444,10 @@ fn decrypt_file(
     let aead = XChaCha20Poly1305::new(&key);
     let mut stream_decryptor = stream::DecryptorBE32::from_aead(aead, &nonce.into());
 
-    // ⚠ TAG_LEN bytes for the Tag appended by any Poly1305 variant.
     let mut buffer = vec![0u8; MSG_LEN + TAG_LEN];
     let mut filled = 0;
 
     loop {
-        // Here we fill all the way to MSG_LEN + TAG_LEN, so we can omit the range end.
         let read_count = enc_file.read(&mut buffer[filled..])?;
         filled += read_count;
 
