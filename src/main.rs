@@ -3,7 +3,7 @@
 // Copyright (c) 2022 Liberas Inc - All Rights Reserved
 
 #![crate_name = "fudo"]
-//! # fudo - 不動 - 𑖥𑖯𑖼 - हाँ
+//! # fudo
 //! Command line utility to encrypt binary distributions, launch encrypted binaries without ever storing plaintext on disk, decrypt files, and scrub files from disk.
 
 use aead::{stream, NewAead};
