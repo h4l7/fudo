@@ -14,7 +14,6 @@ use dialoguer::{Confirm, Password};
 use filetime::FileTime;
 use indicatif::{ProgressBar, ProgressStyle};
 use libc::c_char;
-
 use rand::{rngs::OsRng, Rng, RngCore};
 use std::{
     env,
