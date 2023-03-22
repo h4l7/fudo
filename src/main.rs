@@ -1,6 +1,5 @@
 // Author: Nicholas Haltmeyer <halt@dtllc.io>
 // Created: 2022-06-03 <%Y-%M-%D>
-// Copyright (c) 2022 Liberas Inc - All Rights Reserved
 
 #![crate_name = "fudo"]
 //! # fudo
